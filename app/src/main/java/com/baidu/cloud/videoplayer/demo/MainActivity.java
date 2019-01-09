@@ -4,17 +4,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 
-import com.baidu.cloud.videoplayer.demo.info.DownloadObserverManager;
-import com.baidu.cloud.videoplayer.demo.info.SampleObserver;
-import com.baidu.cloud.videoplayer.demo.info.SharedPrefsStore;
 import com.baidu.cloud.videoplayer.demo.info.VideoInfo;
-import com.baidu.cloud.videoplayer.demo.popview.CustomAlertWindow;
-import com.baidu.cloud.videoplayer.demo.popview.MorePopWindow;
-import com.baidu.cloud.media.download.DownloadableVideoItem;
 import com.baidu.cloud.media.download.VideoDownloadManager;
 
 import android.annotation.TargetApi;
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
@@ -31,7 +26,6 @@ import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.ListView;
 import android.widget.TextView;
-import android.widget.Toast;
 
 public class MainActivity extends Activity {
     private static final String TAG = "MainActivity";
@@ -59,20 +53,6 @@ public class MainActivity extends Activity {
 
         listView = (ListView) this.findViewById(R.id.lv_video_list);
         listView.setAdapter(adapter);
-        initOtherUI();
-    }
-
-    private void initOtherUI() {
-        ImageButton ibMore = (ImageButton) this.findViewById(R.id.ibtn_more);
-        ibMore.setOnClickListener(new OnClickListener() {
-
-            @Override
-            public void onClick(View v) {
-                MorePopWindow popWindow = MorePopWindow.createMorePopWindow(MainActivity.this);
-                popWindow.showPopupWindow(findViewById(R.id.rl_top_bar));
-            }
-
-        });
     }
 
     @Override
@@ -84,7 +64,7 @@ public class MainActivity extends Activity {
     }
 
     public void refreshData() {
-        listData = SharedPrefsStore.getAllMainVideoFromSP(this);
+        listData = getMainSampleData(this);
         adapter.notifyDataSetChanged();
     }
 
@@ -124,7 +104,7 @@ public class MainActivity extends Activity {
             ImageView ivIcon = (ImageView) convertView.findViewById(R.id.iv_item_icon);
             ImageButton ibtnDelete = (ImageButton) convertView.findViewById(R.id.ibtn_item_delete);
             ImageButton ibtnDownload = (ImageButton) convertView.findViewById(R.id.ibtn_item_download);
-            
+
             if (info.getImageUrl() != null && !info.getImageUrl().equals("")) {
                 // fetch image from assets
                 // if your image from url, you need to fetch image async
@@ -142,78 +122,58 @@ public class MainActivity extends Activity {
             }
             tvTitle.setText(info.getTitle());
             tvDesc.setText(info.getUrl());
-            if (info.isCanDelete()) {
-                ibtnDelete.setVisibility(View.VISIBLE);
-                ibtnDelete.setOnClickListener(new OnClickListener() {
-
-                    @Override
-                    public void onClick(View v) {
-                        String msgString = "确定要删除<" + info.getTitle() + ">这个视频资源嘛？";
-                        String yesString = "确定";
-                        String noString = "取消";
-                        View.OnClickListener yesListener = new View.OnClickListener() {
-
-                            @Override
-                            public void onClick(View v) {
-                                SharedPrefsStore.deleteMainVideo(MainActivity.this, info);
-                                refreshData();
-                            }
-                        };
-                        CustomAlertWindow.showAlertWindow(MainActivity.this, msgString, yesString, noString,
-                                yesListener, null);
-                    }
-
-                });
-            } else {
-                ibtnDelete.setVisibility(View.INVISIBLE);
-            }
 
             convertView.setOnClickListener(new OnClickListener() {
 
                 @Override
                 public void onClick(View v) {
-                    Intent intent = null;
-                    boolean isSimple = SharedPrefsStore.isControllBarSimple(MainActivity.this);
-                    if (true) {
-                        // SimplePlayActivity简易播放窗口，便于快速了解播放流程
-                        intent = new Intent(MainActivity.this, SimplePlayActivity.class);
-                    } else {
-                        // AdvancedPlayActivity高级播放窗口，内含丰富的播放控制逻辑
-                        intent = new Intent(MainActivity.this, AdvancedPlayActivity.class);
-                    }
+                    Intent intent;
+                    intent = new Intent(MainActivity.this, SimplePlayActivity.class);
                     intent.putExtra("videoInfo", info);
                     startActivity(intent);
                 }
 
             });
 
-            if (info.getUrl() != null && info.getUrl().endsWith(".m3u8")) {
-                ibtnDownload.setVisibility(View.VISIBLE);
-                ibtnDownload.setOnClickListener(new OnClickListener() {
-
-                    @Override
-                    public void onClick(View v) {
-                        //
-                        DownloadableVideoItem item = downloadManagerInstance
-                                .getDownloadableVideoItemByUrl(info.getUrl());
-                        if (item != null) {
-                            // already
-                            Toast.makeText(MainActivity.this, "该资源已经在缓存列表，请点击右上角「本地缓存」查看", Toast.LENGTH_SHORT).show();
-                        } else {
-                            SharedPrefsStore.addToCacheVideo(MainActivity.this, info);
-                            SampleObserver sampleObs = new SampleObserver();
-                            DownloadObserverManager.addNewObserver(info.getUrl(), sampleObs);
-                            downloadManagerInstance.startOrResumeDownloader(info.getUrl(), sampleObs);
-                            Toast.makeText(MainActivity.this, "开始缓存，请点击右上角「本地缓存」查看进度", Toast.LENGTH_SHORT).show();
-                        }
-                    }
-
-                });
-            } else {
-                ibtnDownload.setVisibility(View.INVISIBLE);
-            }
             return convertView;
         }
 
     };
+
+    /**
+     * 初次进入应用，SP无数据时，准备样例数据
+     *
+     * @return
+     */
+    public ArrayList<VideoInfo> getMainSampleData(Context context) {
+        ArrayList<VideoInfo> sampleList = new ArrayList<VideoInfo>();
+
+        String title1 = "百度云宣传视频";
+        String url1 = "https://vd2.bdstatic.com/mda-ja0x1ixwjw4tfn14/hd/mda-ja0x1ixwjw4tfn14.mp4";
+        VideoInfo info1 = new VideoInfo(title1, url1);
+        info1.setCanDelete(false);
+        info1.setImageUrl("baidu_cloud_bigger.jpg");
+        sampleList.add(info1);
+
+//        String title2 = "LSS3.0使用说明";
+//        String url2 = "http://gkkskijidms30qudc3v.exp.bcevod.com/mda-gkks7fejzyj89qkf/mda-gkks7fejzyj89qkf.m3u8";
+//        VideoInfo info2 = new VideoInfo(title2, url2);
+//        info2.setCanDelete(false);
+//        info2.setImageUrl("baidu_cloud_lss3_release.jpg");
+//        sampleList.add(info2);
+
+        String title3 = "直播链接(HLS/RTMP/HTTP-FLV均可播放)";
+        String url3 = "http://pull3.gz.bigenemy.cn/live/vivoteststream.flv";
+        VideoInfo info3 = new VideoInfo(title3, url3);
+        info3.setCanDelete(false);
+        sampleList.add(info3);
+
+        String title4 = "直播链接是您推流对应的播放链接";
+        String url4 = "";
+        VideoInfo info4 = new VideoInfo(title4, url4);
+        info4.setCanDelete(false);
+        sampleList.add(info4);
+
+        return sampleList;
+    }
 }

@@ -5,7 +5,6 @@ import java.util.TimerTask;
 
 import com.baidu.cloud.media.player.IMediaPlayer;
 import com.baidu.cloud.videoplayer.demo.bar.SimpleMediaController;
-import com.baidu.cloud.videoplayer.demo.info.SharedPrefsStore;
 import com.baidu.cloud.videoplayer.demo.info.VideoInfo;
 import com.baidu.cloud.videoplayer.widget.BDCloudVideoView;
 import com.baidu.cloud.videoplayer.widget.BDCloudVideoView.PlayerState;
@@ -18,7 +17,6 @@ import android.util.Log;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.RelativeLayout;
-import android.widget.Toast;
 
 public class SimplePlayActivity extends Activity implements IMediaPlayer.OnPreparedListener,
         IMediaPlayer.OnCompletionListener, IMediaPlayer.OnErrorListener,
@@ -67,11 +65,7 @@ public class SimplePlayActivity extends Activity implements IMediaPlayer.OnPrepa
 
         mVV = new BDCloudVideoView(this);
         mVV.setVideoPath(info.getUrl());
-        if (SharedPrefsStore.isPlayerFitModeCrapping(getApplicationContext())) {
-            mVV.setVideoScalingMode(BDCloudVideoView.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING);
-        } else {
-            mVV.setVideoScalingMode(BDCloudVideoView.VIDEO_SCALING_MODE_SCALE_TO_FIT);
-        }
+        mVV.setVideoScalingMode(BDCloudVideoView.VIDEO_SCALING_MODE_SCALE_TO_FIT);
 
 
         mediaController = mVV.getController();

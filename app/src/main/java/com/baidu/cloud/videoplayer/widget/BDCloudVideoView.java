@@ -276,6 +276,7 @@ public class BDCloudVideoView extends FrameLayout implements MediaController.Med
         mController = new SimpleMediaController(context);
         LayoutParams fllp1 = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
         fllp1.gravity = Gravity.BOTTOM;
+        mController.setVisibility(GONE);
         addView(mController, fllp1);
 
         reSetRender();
