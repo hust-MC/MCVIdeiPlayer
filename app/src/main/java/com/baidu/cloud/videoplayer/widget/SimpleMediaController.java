@@ -1,4 +1,4 @@
-package com.baidu.cloud.videoplayer.demo.bar;
+package com.baidu.cloud.videoplayer.widget;
 
 import java.util.Timer;
 import java.util.TimerTask;

@@ -4,7 +4,7 @@ import java.util.Timer;
 import java.util.TimerTask;
 
 import com.baidu.cloud.media.player.IMediaPlayer;
-import com.baidu.cloud.videoplayer.demo.bar.SimpleMediaController;
+import com.baidu.cloud.videoplayer.widget.SimpleMediaController;
 import com.baidu.cloud.videoplayer.demo.info.VideoInfo;
 import com.baidu.cloud.videoplayer.widget.BDCloudVideoView;
 import com.baidu.cloud.videoplayer.widget.BDCloudVideoView.PlayerState;

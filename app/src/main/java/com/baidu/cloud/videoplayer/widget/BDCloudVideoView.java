@@ -31,9 +31,7 @@ import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.Gravity;
-import android.view.LayoutInflater;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.MediaController;
 import android.widget.ProgressBar;
@@ -43,7 +41,6 @@ import android.widget.TextView;
 import com.baidu.cloud.media.player.BDCloudMediaPlayer;
 import com.baidu.cloud.media.player.BDTimedText;
 import com.baidu.cloud.media.player.IMediaPlayer;
-import com.baidu.cloud.videoplayer.demo.bar.SimpleMediaController;
 
 import java.io.IOException;
 import java.util.Map;
