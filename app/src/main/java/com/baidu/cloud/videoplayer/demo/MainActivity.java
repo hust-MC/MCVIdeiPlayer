@@ -128,7 +128,7 @@ public class MainActivity extends Activity {
                 @Override
                 public void onClick(View v) {
                     Intent intent;
-                    intent = new Intent(MainActivity.this, SimplePlayActivity.class);
+                    intent = new Intent(MainActivity.this, VideoPlayActivity.class);
                     intent.putExtra("videoInfo", info);
                     startActivity(intent);
                 }

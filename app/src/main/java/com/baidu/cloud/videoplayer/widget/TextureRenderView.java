@@ -35,9 +35,17 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 @TargetApi(Build.VERSION_CODES.ICE_CREAM_SANDWICH)
-public class TextureRenderView extends TextureView implements IRenderView {
+public class TextureRenderView extends TextureView {
     private static final String TAG = "TextureRenderView";
     private MeasureHelper mMeasureHelper;
+
+    static final int AR_ASPECT_FIT_PARENT = 0; // without clip, 等比例填充，视频的边界小于或等于显示屏边界，可能留有黑边
+    static final int AR_ASPECT_FILL_PARENT = 1; // may clip，等比例填充，视频边界大于等于显示屏边界，不留黑边，一部分视频区域可能在显示屏边界之外
+    static final int AR_ASPECT_WRAP_CONTENT = 2; // 按照视频实际大小播放
+    static final int AR_MATCH_PARENT = 3; // 不按比例，满屏播放
+    static final int AR_16_9_FIT_PARENT = 4; // 16:9, 视频的边界小于或等于显示屏边界，可能留有黑边
+    static final int AR_4_3_FIT_PARENT = 5; // 4:3, 视频的边界小于或等于显示屏边界，可能留有黑边
+
 
     public TextureRenderView(Context context) {
         super(context);
@@ -66,12 +74,10 @@ public class TextureRenderView extends TextureView implements IRenderView {
         setSurfaceTextureListener(mSurfaceCallback);
     }
 
-    @Override
     public View getView() {
         return this;
     }
 
-    @Override
     public boolean shouldWaitForResize() {
         return false;
     }
@@ -86,7 +92,6 @@ public class TextureRenderView extends TextureView implements IRenderView {
     // --------------------
     // Layout & Measure
     // --------------------
-    @Override
     public void setVideoSize(int videoWidth, int videoHeight) {
         if (videoWidth > 0 && videoHeight > 0) {
             mMeasureHelper.setVideoSize(videoWidth, videoHeight);
@@ -94,7 +99,6 @@ public class TextureRenderView extends TextureView implements IRenderView {
         }
     }
 
-    @Override
     public void setVideoSampleAspectRatio(int videoSarNum, int videoSarDen) {
         if (videoSarNum > 0 && videoSarDen > 0) {
             mMeasureHelper.setVideoSampleAspectRatio(videoSarNum, videoSarDen);
@@ -102,13 +106,11 @@ public class TextureRenderView extends TextureView implements IRenderView {
         }
     }
 
-    @Override
     public void setVideoRotation(int degree) {
         mMeasureHelper.setVideoRotation(degree);
         setRotation(degree);
     }
 
-    @Override
     public void setAspectRatio(int aspectRatio) {
         mMeasureHelper.setAspectRatio(aspectRatio);
         requestLayout();
@@ -144,11 +146,11 @@ public class TextureRenderView extends TextureView implements IRenderView {
     // TextureViewHolder
     // --------------------
 
-    public IRenderView.ISurfaceHolder getSurfaceHolder() {
+    public ISurfaceHolder getSurfaceHolder() {
         return new InternalSurfaceHolder(this);
     }
 
-    private static final class InternalSurfaceHolder implements IRenderView.ISurfaceHolder {
+    private static final class InternalSurfaceHolder implements ISurfaceHolder {
         private TextureRenderView mTextureView;
 
         public InternalSurfaceHolder(TextureRenderView textureView) {
@@ -175,12 +177,10 @@ public class TextureRenderView extends TextureView implements IRenderView {
             mTextureView.setCurrentMediaPlayerCode(mp.hashCode());
         }
 
-        @Override
-        public IRenderView getRenderView() {
+        public TextureRenderView getRenderView() {
             return mTextureView;
         }
 
-        @Override
         public Surface openSurface() {
             return new Surface(mTextureView.getSurfaceTexture());
         }
@@ -190,18 +190,15 @@ public class TextureRenderView extends TextureView implements IRenderView {
     // SurfaceHolder.Callback
     // -------------------------
 
-    @Override
     public void addRenderCallback(IRenderCallback callback) {
         mSurfaceCallback.addRenderCallback(callback);
     }
 
-    @Override
     public void removeRenderCallback(IRenderCallback callback) {
         mSurfaceCallback.removeRenderCallback(callback);
     }
 
     @TargetApi(16)
-    @Override
     public void release() {
         if (lastSurfaceTexture != null) {
             if (this.isAvailable()) {
@@ -333,4 +330,30 @@ public class TextureRenderView extends TextureView implements IRenderView {
         super.onInitializeAccessibilityNodeInfo(info);
         info.setClassName(TextureRenderView.class.getName());
     }
+
+    interface ISurfaceHolder {
+        void bindToMediaPlayer(IMediaPlayer mp);
+        TextureRenderView getRenderView();
+        Surface openSurface();
+    }
+
+    interface IRenderCallback {
+        /**
+         * @param holder
+         * @param width  could be 0
+         * @param height could be 0
+         */
+        void onSurfaceCreated(ISurfaceHolder holder, int width, int height);
+
+        /**
+         * @param holder
+         * @param format could be 0
+         * @param width
+         * @param height
+         */
+        void onSurfaceChanged(ISurfaceHolder holder, int format, int width, int height);
+
+        void onSurfaceDestroyed(ISurfaceHolder holder);
+    }
+
 }

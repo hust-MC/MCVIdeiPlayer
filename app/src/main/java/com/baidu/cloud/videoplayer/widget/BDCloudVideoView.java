@@ -138,7 +138,7 @@ public class BDCloudVideoView extends FrameLayout implements MediaController.Med
 
 
     // All the stuff we need for playing and showing a video
-    private IRenderView.ISurfaceHolder mSurfaceHolder = null;
+    private TextureRenderView.ISurfaceHolder mSurfaceHolder = null;
     private BDCloudMediaPlayer mMediaPlayer = null;
     // private int         mAudioSession;
     private int mVideoWidth;
@@ -160,10 +160,10 @@ public class BDCloudVideoView extends FrameLayout implements MediaController.Med
 
     private String mDrmToken = null;
 
-    private int mCurrentAspectRatio = IRenderView.AR_ASPECT_FIT_PARENT;
+    private int mCurrentAspectRatio = TextureRenderView.AR_ASPECT_FIT_PARENT;
 
     private Context mAppContext;
-    private IRenderView mRenderView;
+    private TextureRenderView mRenderView;
     private int mVideoSarNum;
     private int mVideoSarDen;
 
@@ -374,7 +374,7 @@ public class BDCloudVideoView extends FrameLayout implements MediaController.Med
      *
      * @param renderView
      */
-    protected void setRenderView(IRenderView renderView) {
+    protected void setRenderView(TextureRenderView renderView) {
         if (mRenderView != null) {
             if (mMediaPlayer != null) {
                 mMediaPlayer.setDisplay(null);
@@ -418,19 +418,14 @@ public class BDCloudVideoView extends FrameLayout implements MediaController.Med
      * 一般在stopPlayBack后，设置新播放源之前调用。
      */
     public void reSetRender() {
-        if (mUseTextureViewFirst && Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
-            TextureRenderView renderView = new TextureRenderView(getContext());
-            if (mMediaPlayer != null) {
-                renderView.getSurfaceHolder().bindToMediaPlayer(mMediaPlayer);
-                renderView.setVideoSize(mMediaPlayer.getVideoWidth(), mMediaPlayer.getVideoHeight());
-                renderView.setVideoSampleAspectRatio(mMediaPlayer.getVideoSarNum(), mMediaPlayer.getVideoSarDen());
-                renderView.setAspectRatio(mCurrentAspectRatio);
-            }
-            setRenderView(renderView);
-        } else {
-            SurfaceRenderView renderView = new SurfaceRenderView(getContext());
-            setRenderView(renderView);
+        TextureRenderView renderView = new TextureRenderView(getContext());
+        if (mMediaPlayer != null) {
+            renderView.getSurfaceHolder().bindToMediaPlayer(mMediaPlayer);
+            renderView.setVideoSize(mMediaPlayer.getVideoWidth(), mMediaPlayer.getVideoHeight());
+            renderView.setVideoSampleAspectRatio(mMediaPlayer.getVideoSarNum(), mMediaPlayer.getVideoSarDen());
+            renderView.setAspectRatio(mCurrentAspectRatio);
         }
+        setRenderView(renderView);
     }
 
 
@@ -1026,7 +1021,7 @@ public class BDCloudVideoView extends FrameLayout implements MediaController.Med
         mOnSeekCompleteListener = l;
     }
 
-    private void bindSurfaceHolder(IMediaPlayer mp, IRenderView.ISurfaceHolder holder) {
+    private void bindSurfaceHolder(IMediaPlayer mp, TextureRenderView.ISurfaceHolder holder) {
         if (mp == null)
             return;
 
@@ -1038,9 +1033,9 @@ public class BDCloudVideoView extends FrameLayout implements MediaController.Med
         holder.bindToMediaPlayer(mp);
     }
 
-    IRenderView.IRenderCallback mSHCallback = new IRenderView.IRenderCallback() {
+    TextureRenderView.IRenderCallback mSHCallback = new TextureRenderView.IRenderCallback() {
         @Override
-        public void onSurfaceChanged(IRenderView.ISurfaceHolder holder, int format, int w, int h) {
+        public void onSurfaceChanged(TextureRenderView.ISurfaceHolder holder, int format, int w, int h) {
             Log.d(TAG, "mSHCallback onSurfaceChanged");
             if (holder.getRenderView() != mRenderView) {
                 Log.e(TAG, "onSurfaceChanged: unmatched render callback\n");
@@ -1057,7 +1052,7 @@ public class BDCloudVideoView extends FrameLayout implements MediaController.Med
         }
 
         @Override
-        public void onSurfaceCreated(IRenderView.ISurfaceHolder holder, int width, int height) {
+        public void onSurfaceCreated(TextureRenderView.ISurfaceHolder holder, int width, int height) {
             if (holder.getRenderView() != mRenderView) {
                 Log.e(TAG, "onSurfaceCreated: unmatched render callback\n");
                 return;
@@ -1071,7 +1066,7 @@ public class BDCloudVideoView extends FrameLayout implements MediaController.Med
         }
 
         @Override
-        public void onSurfaceDestroyed(IRenderView.ISurfaceHolder holder) {
+        public void onSurfaceDestroyed(TextureRenderView.ISurfaceHolder holder) {
             if (holder.getRenderView() != mRenderView) {
                 Log.e(TAG, "onSurfaceDestroyed: unmatched render callback\n");
                 return;
@@ -1084,12 +1079,6 @@ public class BDCloudVideoView extends FrameLayout implements MediaController.Med
     };
 
     private void releaseWithoutStop() {
-        if (mMediaPlayer != null) {
-            if (mRenderView instanceof SurfaceRenderView) {
-                mMediaPlayer.setDisplay(null);
-            }
-
-        }
 
     }
 
@@ -1291,13 +1280,13 @@ public class BDCloudVideoView extends FrameLayout implements MediaController.Med
                 || mode == VIDEO_SCALING_MODE_SCALE_TO_MATCH_PARENT) {
             if (mode == VIDEO_SCALING_MODE_SCALE_TO_FIT) {
                 // 填充
-                mCurrentAspectRatio = IRenderView.AR_ASPECT_FIT_PARENT;
+                mCurrentAspectRatio = TextureRenderView.AR_ASPECT_FIT_PARENT;
             } else if (mode == VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING) {
                 // 裁剪
-                mCurrentAspectRatio = IRenderView.AR_ASPECT_FILL_PARENT;
+                mCurrentAspectRatio = TextureRenderView.AR_ASPECT_FILL_PARENT;
             } else {
                 // 铺满
-                mCurrentAspectRatio = IRenderView.AR_MATCH_PARENT;
+                mCurrentAspectRatio = TextureRenderView.AR_MATCH_PARENT;
             }
             if (mRenderView != null) {
                 mRenderView.setAspectRatio(mCurrentAspectRatio);
@@ -1376,7 +1365,7 @@ public class BDCloudVideoView extends FrameLayout implements MediaController.Med
      * avoid video frame blocked in small probability on some device when using TextureRenderView
      */
     public void enterBackground() {
-        if (mRenderView != null && !(mRenderView instanceof SurfaceRenderView)) {
+        if (mRenderView != null) {
             renderRootView.removeView(mRenderView.getView());
         }
     }
@@ -1386,7 +1375,7 @@ public class BDCloudVideoView extends FrameLayout implements MediaController.Med
      * avoid video frame blocked in small probability on flyme device when using TextureRenderView
      */
     public void enterForeground() {
-        if (mRenderView != null && !(mRenderView instanceof SurfaceRenderView)) {
+        if (mRenderView != null) {
             View renderUIView = mRenderView.getView();
             // getParent() == null : is removed in enterBackground()
             if (renderUIView.getParent() == null) {

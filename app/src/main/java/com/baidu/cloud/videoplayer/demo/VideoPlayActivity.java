@@ -18,11 +18,11 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.RelativeLayout;
 
-public class SimplePlayActivity extends Activity implements IMediaPlayer.OnPreparedListener,
+public class VideoPlayActivity extends Activity implements IMediaPlayer.OnPreparedListener,
         IMediaPlayer.OnCompletionListener, IMediaPlayer.OnErrorListener,
         IMediaPlayer.OnInfoListener, IMediaPlayer.OnBufferingUpdateListener,
         BDCloudVideoView.OnPlayerStateListener {
-    private static final String TAG = "SimplePlayActivity";
+    private static final String TAG = "VideoPlayActivity";
 
     /**
      * 您的AK 请到http://console.bce.baidu.com/iam/#/iam/accesslist获取
