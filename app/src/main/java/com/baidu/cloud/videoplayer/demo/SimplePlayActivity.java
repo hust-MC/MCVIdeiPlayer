@@ -49,7 +49,6 @@ public class SimplePlayActivity extends Activity implements IMediaPlayer.OnPrepa
         PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
 
         info = getIntent().getParcelableExtra("videoInfo");
-
         initUI();
     }
 
