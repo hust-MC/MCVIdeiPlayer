@@ -1,213 +1,112 @@
-/*
- * Copyright (C) 2015 Zhang Rui <bbcallen@gmail.com>
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package com.baidu.cloud.videoplayer.widget;
 
-import android.annotation.TargetApi;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.net.Uri;
-import android.os.Build;
-import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
-import android.os.Message;
-import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.Surface;
 import android.view.View;
 import android.widget.FrameLayout;
-import android.widget.MediaController;
 import android.widget.ProgressBar;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
 
 import com.baidu.cloud.media.player.BDCloudMediaPlayer;
-import com.baidu.cloud.media.player.BDTimedText;
 import com.baidu.cloud.media.player.IMediaPlayer;
+import com.baidu.cloud.videoplayer.demo.BuildConfig;
 
 import java.io.IOException;
 import java.util.Map;
 
 /**
- * 开源类-播放器视图VideoView
- * 可以作为控件增加到App中，该类的主要逻辑为：
- * 在Jelly_Bean(4.1)及以上系统，使用TextureView控件展示视频内容
- * 在Jelly_Bean(4.0)及以下系统，使用SurfaceView控件来展示视频内容
+ * 播放器视图VideoView，可以当做普通View使用。
+ * 底层内部封装了TextureView绘制视频帧，播放内核采用百度云播放器SDK
+ *
+ * @author machao10
+ * @since 2019-01-09
  */
-public class BDCloudVideoView extends FrameLayout implements MediaController.MediaPlayerControl {
-    private static final String TAG = "BDCloudVideoView";
+public class BDCloudVideoView extends FrameLayout {
 
-    /**
-     * 填充，保持视频内容的宽高比。视频与屏幕宽高不一致时，会留有黑边
-     */
-    public static final int VIDEO_SCALING_MODE_SCALE_TO_FIT = 1;
-    /**
-     * 裁剪，保持视频内容的宽高比。视频与屏幕宽高不一致时，会裁剪部分视频内容
-     */
-    public static final int VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING = 2;
+    /** 调试开关 */
+    private static final boolean DEBUG = BuildConfig.DEBUG;
+    /** debug TAG */
+    private static final String TAG = "SwanVideoView";
 
-    /**
-     * 铺满，不保证视频内容宽高比。视频显示与屏幕宽高相等
-     */
-    public static final int VIDEO_SCALING_MODE_SCALE_TO_MATCH_PARENT = 3;
 
-    /**
-     * 优先使用TextureView
-     * 若为true，则在4.1及以上系统，使用TextureView控件展示视频内容，低版本使用SurfaceView；
-     * 若为false，则始终使用SurfaceView控件展示视频内容；
-     * 两者对比：TextureView更耗性能，但支持动画、截图等功能。
-     */
-    private boolean mUseTextureViewFirst = true;
+    /* ================ 播放器状态 START ============== */
+    /** 播放错误 */
+    public static final int STATE_ERROR = -1;
+    /** 播放器空闲 */
+    public static final int STATE_IDLE = 0;
+    /** 正在解析视频源 */
+    public static final int STATE_PREPARING = 1;
+    /** 视频信息解析完毕 */
+    public static final int STATE_PREPARED = 2;
+    /** 正在播放 */
+    public static final int STATE_PLAYING = 3;
+    /** 视频暂停 */
+    public static final int STATE_PAUSED = 4;
+    /** 播放完毕 */
+    public static final int STATE_PLAYBACK_COMPLETED = 5;
+    /* ================ 播放器状态 END ============== */
 
-    // 播放链接
+    /** 最大缓冲大小为500M */
+    private static final int MAX_CACHE = 500 * 1000;
+    /** 设置播放器建立连接和数据下载过程中的超时时长，单位：us */
+    private static final int PLAYER_TIME_OUT_US = 15000000;
+
+    /** 播放器当前的状态 */
+    private int mCurrentState = STATE_IDLE;
+
+    /** 是否需要播放 */
+    private boolean mReadyToPlay;
+    /** 视频源url */
     private Uri mUri;
-    // 指定headers，默认不指定
+    /** 指定headers，默认不指定 */
     private Map<String, String> mHeaders;
-
-    public SimpleMediaController getController() {
-        return mController;
-    }
-
+    /** 播放控件 */
     private SimpleMediaController mController;
-
-    ////////////////////////播放状态专区-起始///////////////////////////////////////////
-    // all possible internal states
-    public enum PlayerState {
-        STATE_ERROR(-1),
-        STATE_IDLE(0),
-        STATE_PREPARING(1),
-        STATE_PREPARED(2),
-        STATE_PLAYING(3),
-        STATE_PAUSED(4),
-        STATE_PLAYBACK_COMPLETED(5);
-
-        private int code;
-
-        private PlayerState(int oCode) {
-            code = oCode;
-        }
-    }
-
-    // 播放器当前的状态
-    private PlayerState mCurrentState = PlayerState.STATE_IDLE;
-
-    public PlayerState getCurrentPlayerState() {
-        return mCurrentState;
-    }
-
-    private void setCurrentState(PlayerState newState) {
-        if (mCurrentState != newState) {
-            mCurrentState = newState;
-            if (mOnPlayerStateListener != null) {
-                mOnPlayerStateListener.onPlayerStateChanged(mCurrentState);
-            }
-        }
-    }
-
-    public interface OnPlayerStateListener {
-        public void onPlayerStateChanged(final PlayerState nowState);
-    }
-
-    public void setOnPlayerStateListener(OnPlayerStateListener listener) {
-        mOnPlayerStateListener = listener;
-    }
-
-    private boolean isTryToPlaying = false;
-
-    ////////////////////////播放状态专区-End///////////////////////////////////////////
-
-
-    // All the stuff we need for playing and showing a video
-    private TextureRenderView.ISurfaceHolder mSurfaceHolder = null;
-    private BDCloudMediaPlayer mMediaPlayer = null;
-    // private int         mAudioSession;
-    private int mVideoWidth;
-    private int mVideoHeight;
-    private int mSurfaceWidth;
-    private int mSurfaceHeight;
-    private int mVideoRotationDegree;
-    private IMediaPlayer.OnCompletionListener mOnCompletionListener;
-    private IMediaPlayer.OnPreparedListener mOnPreparedListener;
+    /** 百度云播放器实例 */
+    private BDCloudMediaPlayer mMediaPlayer;
+    /** 当前播放进度百分比 */
     private int mCurrentBufferPercentage;
-    private IMediaPlayer.OnErrorListener mOnErrorListener;
-    private IMediaPlayer.OnInfoListener mOnInfoListener;
-    private OnPlayerStateListener mOnPlayerStateListener;
-    private IMediaPlayer.OnBufferingUpdateListener mOnBufferingUpdateListener;
-    private IMediaPlayer.OnSeekCompleteListener mOnSeekCompleteListener;
-    private boolean mCanPause = true;
-    private boolean mCanSeekBack = true;
-    private boolean mCanSeekForward = true;
-
-    private String mDrmToken = null;
-
-    private int mCurrentAspectRatio = TextureRenderView.AR_ASPECT_FIT_PARENT;
-
+    /** app context */
     private Context mAppContext;
-    private TextureRenderView mRenderView;
-    private int mVideoSarNum;
-    private int mVideoSarDen;
+    /** 用于绘制视频的TextureView对象 */
+    private TextureRenderView mTextureView;
+    /** 视频播放初始位置 */
+    private long mInitPlayPositionInMSec = -1;
+    /** 标记是否自动循环播放 */
+    private boolean mLooping;
+    /** 标记是否使用控件 */
+    private boolean mControllerEnabled = true;
 
-    private int mCacheTimeInMilliSeconds = 0;
-    private boolean mbShowCacheInfo = true;
-    private int mDecodeMode = BDCloudMediaPlayer.DECODE_AUTO;
-    private boolean mLogEnabled = false;
-    private long mInitPlayPositionInMilliSec = 0;
-    private int mWakeMode = 0;
-    private float mLeftVolume = -1f;
-    private float mRightVolume = -1f;
-    private int mMaxProbeTimeInMs = -1;
-    private int mMaxProbeSizeInBytes = 0;
-    private int mMaxCacheSizeInBytes = 0;
-    private boolean mLooping = false;
-    private int mBufferSizeInBytes = 0;
-    private int mFrameChasing = -1;
-    private float mSpeed = 1.0f;
 
-    /**
-     * 以下三个类负责『加载中』的提示界面，如想定制加载中界面，修改下面的Bar和Hint控件即可
-     */
-    private RelativeLayout cachingHintViewRl = null;
-    private ProgressBar cachingProgressBar = null;
-    private TextView cachingProgressHint = null;
+    /* ============ 加载中状态view START ========= */
+    /** 加载中布局容器 */
+    private RelativeLayout mLoadingLayout;
+    /** 加载中进度条 */
+    private ProgressBar mLoadingBar;
+    /** 加载中提示语 */
+    private TextView mLoadingHint;
+    /* ============ 加载中状态view END =========== */
 
-    // render target view is on this
-    private FrameLayout renderRootView = null;
+    /** 视频view根布局 */
+    private FrameLayout mVideoRootView;
 
-    private static final int MESSAGE_CHANGE_CACHING = 1;
-    private Handler mainThreadHandler = new Handler(Looper.getMainLooper()) {
+    static {
+        BDCloudMediaPlayer.setAK("5989e435183e42c5a3f7da72dbac006c");
+    }
 
-        @Override
-        public void handleMessage(Message msg) {
-            if (msg.what == MESSAGE_CHANGE_CACHING) {
-                setCachingHintViewVisibility(msg.arg1 == 1);
-            }
-//            super.handleMessage(msg);
-        }
-    };
-
-    private TextView subtitleDisplay;
 
     /**
-     * 代码构造函数
+     * 视频播放器view构造器
      *
-     * @param context
+     * @param context 上下文
      */
     public BDCloudVideoView(Context context) {
         super(context);
@@ -215,22 +114,10 @@ public class BDCloudVideoView extends FrameLayout implements MediaController.Med
     }
 
     /**
-     * 代码构造函数，可指定是否优先使用TextureView
+     * x视频播放器view构造器
      *
-     * @param context
-     * @param useTextureViewFirst
-     */
-    public BDCloudVideoView(Context context, boolean useTextureViewFirst) {
-        super(context);
-        this.mUseTextureViewFirst = useTextureViewFirst;
-        initVideoView(context);
-    }
-
-    /**
-     * xml构造函数
-     *
-     * @param context
-     * @param attrs
+     * @param context 上下文
+     * @param attrs   布局参数
      */
     public BDCloudVideoView(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -238,11 +125,11 @@ public class BDCloudVideoView extends FrameLayout implements MediaController.Med
     }
 
     /**
-     * xml构造函数
+     * 视频播放器view构造器
      *
-     * @param context
-     * @param attrs
-     * @param defStyleAttr
+     * @param context      上下文
+     * @param attrs        布局参数
+     * @param defStyleAttr 布局风格参数
      */
     public BDCloudVideoView(Context context, AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
@@ -250,370 +137,261 @@ public class BDCloudVideoView extends FrameLayout implements MediaController.Med
     }
 
     /**
-     * xml构造函数
+     * 初始化视频view
      *
-     * @param context
-     * @param attrs
-     * @param defStyleAttr
-     * @param defStyleRes
+     * @param context 上下文对象
      */
-    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
-    public BDCloudVideoView(Context context, AttributeSet attrs, int defStyleAttr, int defStyleRes) {
-        super(context, attrs, defStyleAttr, defStyleRes);
-        initVideoView(context);
-    }
-
     private void initVideoView(Context context) {
+
         mAppContext = context.getApplicationContext();
 
-        renderRootView = new FrameLayout(context);
-        FrameLayout.LayoutParams fllp = new FrameLayout.LayoutParams(-1, -1);
-        addView(renderRootView, fllp);
+        mVideoRootView = new FrameLayout(context);
+        FrameLayout.LayoutParams rootViewParams = new FrameLayout.LayoutParams(-1, -1);
+        addView(mVideoRootView, rootViewParams);
 
-        mController = new SimpleMediaController(context);
-        LayoutParams fllp1 = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
-        fllp1.gravity = Gravity.BOTTOM;
+        mController = new MediaController(context);
+        LayoutParams controllerParams =
+                new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+        controllerParams.gravity = Gravity.BOTTOM;
         mController.setVisibility(GONE);
-        addView(mController, fllp1);
+        addView(mController, controllerParams);
+        mController.bindMediaControl(this);
 
-        reSetRender();
-
-        addSubtitleView();
+        initTextureView();
         addCachingHintView();
-
-        mVideoWidth = 0;
-        mVideoHeight = 0;
 
         setFocusable(true);
         setFocusableInTouchMode(true);
         requestFocus();
-        setCurrentState(PlayerState.STATE_IDLE);
+        setCurrentState(STATE_IDLE);
+
+        setOnClickListener(new OnClickListener() {
+
+            @Override
+            public void onClick(View v) {
+                if (!mControllerEnabled) {
+                    return;
+                }
+                if (mController.getVisibility() != VISIBLE) {
+                    mController.hideOuterAfterSeconds();
+                } else {
+                    mController.hide();
+                }
+            }
+        });
     }
 
     /**
-     * 增加字幕显示控件
+     * 为播放器设置surface
+     *
+     * @param surface 用于绘制视频图像的surface对象
      */
-    private void addSubtitleView() {
-        subtitleDisplay = new TextView(this.getContext());
-        subtitleDisplay.setTextSize(24);
-        subtitleDisplay.setGravity(Gravity.CENTER);
-        FrameLayout.LayoutParams layoutParamsTxt = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM);
-        addView(subtitleDisplay, layoutParamsTxt);
+    public void setSurface(Surface surface) {
+        mMediaPlayer.setSurface(surface);
     }
 
     /**
-     * 增加『加载中』控件
+     * 添加加载提示控件
      */
     private void addCachingHintView() {
-        cachingHintViewRl = new RelativeLayout(this.getContext());
-        FrameLayout.LayoutParams fllp = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
+        mLoadingLayout = new RelativeLayout(this.getContext());
+        FrameLayout.LayoutParams loadingParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams
+                .MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT);
-        cachingHintViewRl.setVisibility(View.GONE);
-        addView(cachingHintViewRl, fllp);
+        mLoadingLayout.setVisibility(View.GONE);
+        addView(mLoadingLayout, loadingParams);
 
-        RelativeLayout.LayoutParams rllp = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT,
+        RelativeLayout.LayoutParams loadingBarParams = new RelativeLayout.LayoutParams(
+                RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT);
+        loadingBarParams.addRule(RelativeLayout.CENTER_IN_PARENT);
+
+        mLoadingBar = new ProgressBar(this.getContext());
+        mLoadingBar.setId(android.R.id.text1);
+        mLoadingBar.setMax(100);
+        mLoadingBar.setProgress(10);
+        mLoadingBar.setSecondaryProgress(100);
+        mLoadingLayout.addView(mLoadingBar, loadingBarParams);
+
+        loadingBarParams = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.MATCH_PARENT,
                 RelativeLayout.LayoutParams.WRAP_CONTENT);
-        rllp.addRule(RelativeLayout.CENTER_IN_PARENT);
-
-        cachingProgressBar = new ProgressBar(this.getContext());
-        cachingProgressBar.setId(android.R.id.text1); // setId() param can be random number, use text1 to avoid lints
-        cachingProgressBar.setMax(100);
-        cachingProgressBar.setProgress(10);
-        cachingProgressBar.setSecondaryProgress(100);
-        cachingHintViewRl.addView(cachingProgressBar, rllp);
-
-        rllp = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.MATCH_PARENT,
-                RelativeLayout.LayoutParams.WRAP_CONTENT);
-        rllp.addRule(RelativeLayout.ALIGN_PARENT_LEFT);
-        rllp.addRule(RelativeLayout.BELOW, android.R.id.text1);
-        cachingProgressHint = new TextView(this.getContext());
-        cachingProgressHint.setTextColor(0xffffffff);
-        cachingProgressHint.setText("正在缓冲...");
-        cachingProgressHint.setGravity(Gravity.CENTER_HORIZONTAL);
-        cachingHintViewRl.addView(cachingProgressHint, rllp);
+        loadingBarParams.addRule(RelativeLayout.ALIGN_PARENT_LEFT);
+        loadingBarParams.addRule(RelativeLayout.BELOW, android.R.id.text1);
+        mLoadingHint = new TextView(this.getContext());
+        mLoadingHint.setTextColor(0xffffffff);
+        mLoadingHint.setText(R.string.laoding);
+        mLoadingHint.setGravity(Gravity.CENTER_HORIZONTAL);
+        mLoadingLayout.addView(mLoadingHint, loadingBarParams);
     }
 
     /**
-     * 显示或隐藏『加载中』消息，该函数必须在主线程调用
+     * 设置播放器回调
      *
-     * @param bShow
+     * @param callback 播放器回调
      */
-    private void setCachingHintViewVisibility(boolean bShow) {
-        if (bShow) {
-            cachingHintViewRl.setVisibility(View.VISIBLE);
+    public void setVideoPlayerCallback(IVideoPlayerCallback callback) {
+        mVideoPlayerCallback = callback;
+        if (mController != null) {
+            mController.setToggleScreenListener(callback);
+        }
+    }
+
+    /**
+     * 获取播放器当前状态
+     *
+     * @return 播放器状态
+     */
+    public int getCurrentPlayerState() {
+        return mCurrentState;
+    }
+
+    /**
+     * 设置播放器状态
+     *
+     * @param newState 播放器状态
+     */
+    private void setCurrentState(int newState) {
+        if (mCurrentState != newState) {
+            mCurrentState = newState;
+            if (mController != null) {
+                mController.updateState();
+            }
+        }
+    }
+
+    /**
+     * 设置缓冲提示的可见性
+     *
+     * @param visible true：可见；false：不可见
+     */
+    private void setCacheViewVisibility(boolean visible) {
+        if (visible) {
+            mLoadingLayout.setVisibility(View.VISIBLE);
         } else {
-            cachingHintViewRl.setVisibility(View.GONE);
+            mLoadingLayout.setVisibility(View.GONE);
         }
     }
 
     /**
-     * 当一些操作无法保证主线程时，使用该方法来达到显示隐藏『加载中』消息的目的
-     *
-     * @param bShow
+     * 初始化textView，用于渲染视频内容
      */
-    private void sendCachingHintViewVisibilityMessage(boolean bShow) {
-        // 自定义『加载中』状态时，会调用 showCacheInfo(false) 将mbShowCacheInfo置为false
-        if (mbShowCacheInfo) {
-            Message msg = mainThreadHandler.obtainMessage();
-            msg.what = MESSAGE_CHANGE_CACHING;
-            msg.arg1 = bShow ? 1 : 0;
-            mainThreadHandler.sendMessage(msg);
-        }
-
-    }
-
-    /**
-     * 设置renderview
-     * 多数时候您不需使用
-     *
-     * @param renderView
-     */
-    protected void setRenderView(TextureRenderView renderView) {
-        if (mRenderView != null) {
+    private void initTextureView() {
+        if (mTextureView != null) {
             if (mMediaPlayer != null) {
                 mMediaPlayer.setDisplay(null);
             }
-
-            View renderUIView = mRenderView.getView();
-            mRenderView.removeRenderCallback(mSHCallback);
-            mRenderView.release();
-            mRenderView = null;
-            mSurfaceHolder = null;
-            renderRootView.removeView(renderUIView);
+            mTextureView.release();
+            mVideoRootView.removeView(mTextureView);
+            mTextureView = null;
         }
 
-        if (renderView == null) {
-            return;
-        }
+        mTextureView = new VideoTextureView(getContext());
 
-        mRenderView = renderView;
-        renderView.setAspectRatio(mCurrentAspectRatio);
-        if (mVideoWidth > 0 && mVideoHeight > 0) {
-            renderView.setVideoSize(mVideoWidth, mVideoHeight);
-        }
-        if (mVideoSarNum > 0 && mVideoSarDen > 0) {
-            renderView.setVideoSampleAspectRatio(mVideoSarNum, mVideoSarDen);
-        }
-
-        View renderUIView = mRenderView.getView();
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER);
-        renderUIView.setLayoutParams(lp);
-        renderRootView.addView(renderUIView);
+        mTextureView.setLayoutParams(params);
+        mVideoRootView.addView(mTextureView);
 
-        mRenderView.addRenderCallback(mSHCallback);
-        mRenderView.setVideoRotation(mVideoRotationDegree);
+        mSurfaceCallback = new SurfaceTextureCallback(this, mTextureView);
+        mTextureView.setSurfaceTextureListener(mSurfaceCallback);
     }
 
     /**
-     * 重新设置render渲染目标，该方法能达到抹去之前视频最后一帧的效果<br>
-     * 一般在stopPlayBack后，设置新播放源之前调用。
-     */
-    public void reSetRender() {
-        TextureRenderView renderView = new TextureRenderView(getContext());
-        if (mMediaPlayer != null) {
-            renderView.getSurfaceHolder().bindToMediaPlayer(mMediaPlayer);
-            renderView.setVideoSize(mMediaPlayer.getVideoWidth(), mMediaPlayer.getVideoHeight());
-            renderView.setVideoSampleAspectRatio(mMediaPlayer.getVideoSarNum(), mMediaPlayer.getVideoSarDen());
-            renderView.setAspectRatio(mCurrentAspectRatio);
-        }
-        setRenderView(renderView);
-    }
-
-
-    /**
-     * Sets video path.
+     * 设置视频源路径
      *
-     * @param path the path of the video.
+     * @param path 视频源路径，支持本地和网络
      */
     public void setVideoPath(String path) {
-        setVideoPathWithToken(path, null);
-    }
-
-    /**
-     * 设置百度加密视频的视频源和加密token
-     *
-     * @param path
-     * @param token
-     */
-    public void setVideoPathWithToken(String path, String token) {
-        this.mDrmToken = token;
-        setVideoURI(Uri.parse(path));
-    }
-
-    /**
-     * Sets specific headers.
-     * 需在setVideoPath之前调用
-     *
-     * @param headers the headers for the URI request.
-     *                Note that the cross domain redirection is allowed by default, but that can be
-     *                changed with key/value pairs through the headers parameter with
-     *                "android-allow-cross-domain-redirect" as the key and "0" or "1" as the value
-     *                to disallow or allow cross domain redirection.
-     */
-    public void setHeaders(Map<String, String> headers) {
-        mHeaders = headers;
-    }
-
-    /**
-     * Sets video URI using specific headers.
-     *
-     * @param uri the URI of the video.
-     */
-    private void setVideoURI(Uri uri) {
-        mUri = uri;
+        mUri = Uri.parse(path);
         openVideo();
         requestLayout();
         invalidate();
     }
 
     /**
-     * 停止播放并释放资源
-     * 如果仅想停止播放，请调用pause()
+     * 设置请求header，需要在setVideoPath之前调用
+     *
+     * @param headers 网络请求header，默认不设置
+     */
+    public void setHeaders(Map<String, String> headers) {
+        mHeaders = headers;
+    }
+
+    /**
+     * 停止播放并释放资源。如果想再次播放，需要重新create
      */
     public void stopPlayback() {
         if (mMediaPlayer != null) {
             mMediaPlayer.stop();
-            release(true);
+            releasePlayer();
+            mReadyToPlay = false;
         }
     }
 
-    @TargetApi(14)
+    /**
+     * 打开播放器
+     */
     private void openVideo() {
-        if (mUri == null || mSurfaceHolder == null) {
-            // not ready for playback just yet, will try again later
+        if (mUri == null) {
             return;
         }
-        // we shouldn't clear the target state, because somebody might have
-        // called start() previously
-        release(false);
 
-        AudioManager am = (AudioManager) mAppContext.getSystemService(Context.AUDIO_SERVICE);
-        am.requestAudioFocus(null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
+        releasePlayer();
 
         try {
-
             mMediaPlayer = createPlayer();
-            if (!TextUtils.isEmpty(this.mDrmToken)) {
-                mMediaPlayer.setDecryptTokenForHLS(mDrmToken);
-            }
             mMediaPlayer.setOnPreparedListener(mPreparedListener);
-            mMediaPlayer.setOnVideoSizeChangedListener(mSizeChangedListener);
             mMediaPlayer.setOnCompletionListener(mCompletionListener);
             mMediaPlayer.setOnErrorListener(mErrorListener);
-            mMediaPlayer.setOnInfoListener(mInfoListener);
             mMediaPlayer.setOnBufferingUpdateListener(mBufferingUpdateListener);
             mMediaPlayer.setOnSeekCompleteListener(mSeekCompleteListener);
-            mMediaPlayer.setOnTimedTextListener(mOnTimedTextListener);
-            mMediaPlayer.setOnMetadataListener(mOnMetadataListener);
             mCurrentBufferPercentage = 0;
             mMediaPlayer.setDataSource(mAppContext, mUri, mHeaders);
-            bindSurfaceHolder(mMediaPlayer, mSurfaceHolder);
             mMediaPlayer.setAudioStreamType(AudioManager.STREAM_MUSIC);
             mMediaPlayer.setScreenOnWhilePlaying(true);
-            mMediaPlayer.setTimeoutInUs(15000000);
+            mMediaPlayer.setTimeoutInUs(PLAYER_TIME_OUT_US);
             mMediaPlayer.prepareAsync();
-            sendCachingHintViewVisibilityMessage(true);
+            setCacheViewVisibility(true);
 
-            // we don't set the target state here either, but preserve the
-            // target state that was there before.
-            setCurrentState(PlayerState.STATE_PREPARING);
-//            attachMediaController();
-        } catch (IOException ex) {
-            Log.w(TAG, "Unable to open content: " + mUri, ex);
-            setCurrentState(PlayerState.STATE_ERROR);
-//            mTargetState = STATE_ERROR;
-            isTryToPlaying = false;
+            setCurrentState(STATE_PREPARING);
+
+        } catch (IOException | IllegalArgumentException ex) {
+            if (DEBUG) {
+                Log.w(TAG, "Unable to open content: " + mUri, ex);
+            }
+            setCurrentState(STATE_ERROR);
+            mReadyToPlay = false;
             mErrorListener.onError(mMediaPlayer, MediaPlayer.MEDIA_ERROR_UNKNOWN, 0);
-        } catch (IllegalArgumentException ex) {
-            Log.w(TAG, "Unable to open content: " + mUri, ex);
-            setCurrentState(PlayerState.STATE_ERROR);
-//            mTargetState = STATE_ERROR;
-            isTryToPlaying = false;
-            mErrorListener.onError(mMediaPlayer, MediaPlayer.MEDIA_ERROR_UNKNOWN, 0);
-        } finally {
-            // REMOVED: mPendingSubtitleTracks.clear();
         }
     }
 
+    /**
+     * 创建播放器
+     *
+     * @return 百度云播放器
+     */
     public BDCloudMediaPlayer createPlayer() {
         BDCloudMediaPlayer bdCloudMediaPlayer = new BDCloudMediaPlayer(this.getContext());
 
-        bdCloudMediaPlayer.setLogEnabled(mLogEnabled); // 打开播放器日志输出
-        bdCloudMediaPlayer.setDecodeMode(mDecodeMode); // 设置解码模式
-        if (mInitPlayPositionInMilliSec > -1) {
-            bdCloudMediaPlayer.setInitPlayPosition(mInitPlayPositionInMilliSec); // 设置初始播放位置
-            mInitPlayPositionInMilliSec = -1; // 置为-1，防止影响下个播放源
-        }
-        if (mWakeMode > 0) {
-            bdCloudMediaPlayer.setWakeMode(this.getContext(), mWakeMode);
-        }
-        if (mLeftVolume > -1 && mRightVolume > -1) {
-            bdCloudMediaPlayer.setVolume(mLeftVolume, mRightVolume);
-        }
-        if (mCacheTimeInMilliSeconds > 0) {
-            bdCloudMediaPlayer.setBufferTimeInMs(mCacheTimeInMilliSeconds); // 设置『加载中』的最长缓冲时间
+        bdCloudMediaPlayer.setLogEnabled(DEBUG);
+        bdCloudMediaPlayer.setDecodeMode(BDCloudMediaPlayer.DECODE_AUTO);
+
+        if (mInitPlayPositionInMSec > 0) {
+            bdCloudMediaPlayer.setInitPlayPosition(mInitPlayPositionInMSec); // 设置初始播放位置
+            mInitPlayPositionInMSec = -1;
         }
 
-        if (mMaxProbeTimeInMs >= 0) {
-            bdCloudMediaPlayer.setMaxProbeTime(mMaxProbeTimeInMs);
-        }
-        if (mMaxProbeSizeInBytes > 0) {
-            bdCloudMediaPlayer.setMaxProbeSize(mMaxProbeSizeInBytes);
-        }
-        if (mMaxCacheSizeInBytes > 0) {
-            bdCloudMediaPlayer.setMaxCacheSizeInBytes(mMaxCacheSizeInBytes);
-        }
-        if (mLooping) {
-            bdCloudMediaPlayer.setLooping(mLooping);
-        }
-        if (mBufferSizeInBytes > 0) {
-            bdCloudMediaPlayer.setBufferSizeInBytes(mBufferSizeInBytes);
-        }
-
-        if (mFrameChasing >= 0) {
-            bdCloudMediaPlayer.toggleFrameChasing(mFrameChasing == 1);
-        }
-
-        bdCloudMediaPlayer.setSpeed(mSpeed);
+        bdCloudMediaPlayer.setMaxCacheSizeInBytes(MAX_CACHE);
+        bdCloudMediaPlayer.setLooping(mLooping);
 
         return bdCloudMediaPlayer;
     }
 
     /**
-     * 设置"加载中"触发时，缓存多长时间的数据才结束
-     * * 注意：若mMediaPlayer为null时，实际上会在createPlayer()中设置，这是mCacheTimeInMilliSeconds成员在此赋值的原因；
-     *
-     * @param milliSeconds
-     */
-    public void setBufferTimeInMs(int milliSeconds) {
-        this.mCacheTimeInMilliSeconds = milliSeconds;
-        if (mMediaPlayer != null) {
-            mMediaPlayer.setBufferTimeInMs(mCacheTimeInMilliSeconds);
-        }
-    }
-
-    /**
-     * 设置"加载中"触发时，需要缓冲多大的数据才结束
-     *
-     * @param sizeInBytes
-     */
-    public void setBufferSizeInBytes(int sizeInBytes) {
-        this.mBufferSizeInBytes = sizeInBytes;
-        if (mMediaPlayer != null) {
-            mMediaPlayer.setBufferSizeInBytes(mBufferSizeInBytes);
-        }
-    }
-
-    /**
      * 设置是否循环播放
      *
-     * @param isLoop
+     * @param isLoop 是否循环播放
      */
     public void setLooping(boolean isLoop) {
         this.mLooping = isLoop;
@@ -623,536 +401,228 @@ public class BDCloudVideoView extends FrameLayout implements MediaController.Med
     }
 
     /**
-     * 设置最大缓存数据大小
+     * 设置音量
      *
-     * @param sizeInBytes
+     * @param volume 音量值
      */
-    public void setMaxCacheSizeInBytes(int sizeInBytes) {
-        mMaxCacheSizeInBytes = sizeInBytes;
+    public void setVolume(float volume) {
         if (mMediaPlayer != null) {
-            mMediaPlayer.setMaxCacheSizeInBytes(mMaxCacheSizeInBytes);
+            mMediaPlayer.setVolume(volume, volume);
         }
     }
 
     /**
-     * 设置最大探测的数据大小
+     * 设置控件是否可用
      *
-     * @param maxProbeSizeInBytes
+     * @param enable true：可用；false：不可用
      */
-    public void setMaxProbeSize(int maxProbeSizeInBytes) {
-        mMaxProbeSizeInBytes = maxProbeSizeInBytes;
+    public void setMediaControllerEnabled(boolean enable) {
+        mControllerEnabled = enable;
+    }
+
+    /**
+     * 设置播放器初始播放位置。单位ms
+     *
+     * @param mSec 初始播放位置
+     */
+    public void setInitPlayPosition(long mSec) {
+        mInitPlayPositionInMSec = mSec;
         if (mMediaPlayer != null) {
-            mMediaPlayer.setMaxProbeSize(mMaxProbeSizeInBytes);
+            mMediaPlayer.setInitPlayPosition(mInitPlayPositionInMSec);
+            // 重置播放位置
+            mInitPlayPositionInMSec = -1;
         }
     }
 
     /**
-     * 设置最大探测时长
-     * 类似于老接口 setFirstBufferingTime
-     *
-     * @param maxProbeTimeInMs
+     * 播放器prepared事件回调，在播放器解析完视频meta信息后回调
      */
-    public void setMaxProbeTime(int maxProbeTimeInMs) {
-        mMaxProbeTimeInMs = maxProbeTimeInMs;
-        if (mMediaPlayer != null) {
-            mMediaPlayer.setMaxProbeTime(mMaxProbeTimeInMs);
-        }
-    }
-
-    public void setTimeoutInUs(int timeout) {
-        if (mMediaPlayer != null) {
-            mMediaPlayer.setTimeoutInUs(timeout);
-        }
-    }
-
-    /**
-     * 设置左右声道的音量
-     *
-     * @param leftVolume
-     * @param rightVolume
-     */
-    public void setVolume(float leftVolume, float rightVolume) {
-        mLeftVolume = leftVolume;
-        mRightVolume = rightVolume;
-        if (mMediaPlayer != null) {
-            mMediaPlayer.setVolume(mLeftVolume, mRightVolume);
-        }
-    }
-
-    /**
-     * 设置播放速率，为保证机器兼容性，取值区间为 [0.1f, 1.9f]
-     * 有的机器设置速率为2.0f时，会出现剧烈嘈杂声
-     *
-     * @param playSpeed
-     */
-    public void setSpeed(float playSpeed) {
-        mSpeed = playSpeed;
-        if (mMediaPlayer != null) {
-            mMediaPlayer.setSpeed(mSpeed);
-        }
-    }
-
-    /**
-     * 设置唤醒Mode
-     *
-     * @param context
-     * @param mode
-     */
-    public void setWakeMode(Context context, int mode) {
-        mWakeMode = mode;
-        if (mMediaPlayer != null) {
-            mMediaPlayer.setWakeMode(context, mWakeMode);
-        }
-    }
-
-
-    /**
-     * 设置初始播放位置
-     * 注意：若mMediaPlayer为null时，实际上会在createPlayer()中设置，这是mInitPlayPositionInMilliSec成员在此赋值的原因；
-     *
-     * @param milliSeconds
-     */
-    public void setInitPlayPosition(long milliSeconds) {
-        mInitPlayPositionInMilliSec = milliSeconds;
-        if (mMediaPlayer != null) {
-            mMediaPlayer.setInitPlayPosition(mInitPlayPositionInMilliSec);
-            // 设置给mediaplayer后重置为-1，防止影响新播放源的播放
-            mInitPlayPositionInMilliSec = -1;
-        }
-    }
-
-
-    /**
-     * 设置是否显示日志
-     * 注意：若mMediaPlayer为null时，实际上会在createPlayer()中设置，这是mLogEnable成员在此赋值的原因；
-     *
-     * @param enabled
-     */
-    public void setLogEnabled(boolean enabled) {
-        mLogEnabled = enabled;
-        if (mMediaPlayer != null) {
-            mMediaPlayer.setLogEnabled(mLogEnabled);
-        }
-    }
-
-
-    /**
-     * 设置解码模式
-     * 注意：若mMediaPlayer为null时，实际上会在createPlayer()中设置，这是mDecodeMode成员在此赋值的原因；
-     *
-     * @param decodeMode DECODE_AUTO(优先硬解，找不到硬解解码器则软解)或DECODE_SW(软解)
-     */
-    public void setDecodeMode(int decodeMode) {
-        mDecodeMode = decodeMode;
-        if (mMediaPlayer != null) {
-            mMediaPlayer.setDecodeMode(mDecodeMode);
-        }
-    }
-
-    /**
-     * 设置是否开启追帧播放功能
-     *
-     * @param isEnable 是否开启
-     */
-    public void toggleFrameChasing(boolean isEnable) {
-        mFrameChasing = isEnable ? 1 : 0;
-        if (mMediaPlayer != null) {
-            mMediaPlayer.toggleFrameChasing(isEnable);
-        }
-    }
-
-    /**
-     * 设置是否显示默认的『加载中』信息
-     *
-     * @param bShow
-     */
-    public void showCacheInfo(boolean bShow) {
-        mbShowCacheInfo = bShow;
-    }
-
-    /**
-     * 获取当前的mediaplayer，可能为null
-     *
-     * @return 返回当前的player对象，可能为null
-     */
-    public IMediaPlayer getCurrentMediaPlayer() {
-        return mMediaPlayer;
-    }
-
-    IMediaPlayer.OnVideoSizeChangedListener mSizeChangedListener =
-            new IMediaPlayer.OnVideoSizeChangedListener() {
-                public void onVideoSizeChanged(IMediaPlayer mp, int width, int height, int sarNum, int sarDen) {
-                    Log.d(TAG, "onVideoSizeChanged width=" + width + ";height=" + height + ";sarNum="
-                            + sarNum + ";sarDen=" + sarDen);
-                    mVideoWidth = mp.getVideoWidth();
-                    mVideoHeight = mp.getVideoHeight();
-                    mVideoSarNum = mp.getVideoSarNum();
-                    mVideoSarDen = mp.getVideoSarDen();
-                    if (mVideoWidth != 0 && mVideoHeight != 0) {
-                        if (mRenderView != null) {
-                            mRenderView.setVideoSize(mVideoWidth, mVideoHeight);
-                            mRenderView.setVideoSampleAspectRatio(mVideoSarNum, mVideoSarDen);
-                        }
-                        // REMOVED: getHolder().setFixedSize(mVideoWidth, mVideoHeight);
-                        requestLayout();
-                    }
-                }
-            };
-
     IMediaPlayer.OnPreparedListener mPreparedListener = new IMediaPlayer.OnPreparedListener() {
         public void onPrepared(IMediaPlayer mp) {
-            Log.d(TAG, "onPrepared");
-            setCurrentState(PlayerState.STATE_PREPARED);
+            if (DEBUG) {
+                Log.d(TAG, "onPrepared");
+            }
+            setCurrentState(STATE_PREPARED);
 
-            sendCachingHintViewVisibilityMessage(false);
+            setCacheViewVisibility(false);
 
-
-            mVideoWidth = mp.getVideoWidth();
-            mVideoHeight = mp.getVideoHeight();
-
-            if (mOnPreparedListener != null) {
-                mOnPreparedListener.onPrepared(mMediaPlayer);
+            if (mVideoPlayerCallback != null) {
+                mVideoPlayerCallback.onPrepared(mMediaPlayer);
             }
 
-            Log.d(TAG, "onPrepared: mVideoWidth=" + mVideoWidth + ";mVideoHeight="
-                    + mVideoHeight + ";mSurfaceWidth=" + mSurfaceWidth + ";mSurfaceHeight=" + mSurfaceHeight);
-            if (mVideoWidth != 0 && mVideoHeight != 0) {
-                if (mRenderView != null) {
-                    mRenderView.setVideoSize(mVideoWidth, mVideoHeight);
-                    mRenderView.setVideoSampleAspectRatio(mVideoSarNum, mVideoSarDen);
-                    if (!mRenderView.shouldWaitForResize() || mSurfaceWidth == mVideoWidth && mSurfaceHeight == mVideoHeight) {
-                        // We didn't actually change the size (it was already at the size
-                        // we need), so we won't get a "surface changed" callback, so
-                        // start the video here instead of in the callback.
-                        if (isTryToPlaying) {
-                            start();
-                        }
-                    }
-                }
-            } else {
-                // We don't know the video size yet, but should start anyway.
-                // The video size might be reported to us later.
-                if (isTryToPlaying) {
-                    start();
-                }
+            if (mReadyToPlay) {
+                start();
             }
         }
     };
 
+    /**
+     * 视频播放结束回调
+     */
     private IMediaPlayer.OnCompletionListener mCompletionListener =
             new IMediaPlayer.OnCompletionListener() {
                 public void onCompletion(IMediaPlayer mp) {
                     Log.d(TAG, "onCompletion");
-                    sendCachingHintViewVisibilityMessage(false);
-                    setCurrentState(PlayerState.STATE_PLAYBACK_COMPLETED);
-                    isTryToPlaying = false;
-                    if (mOnCompletionListener != null) {
-                        mOnCompletionListener.onCompletion(mMediaPlayer);
+                    setCacheViewVisibility(false);
+                    setCurrentState(STATE_PLAYBACK_COMPLETED);
+                    mReadyToPlay = false;
+                    if (mVideoPlayerCallback != null) {
+                        mVideoPlayerCallback.onCompletion(mMediaPlayer);
                     }
                 }
             };
 
-    private IMediaPlayer.OnInfoListener mInfoListener =
-            new IMediaPlayer.OnInfoListener() {
-                public boolean onInfo(IMediaPlayer mp, int arg1, int arg2) {
-                    Log.d(TAG, "onInfo: arg1=" + arg1 + "; arg2=" + arg2);
-                    if (mOnInfoListener != null) {
-                        mOnInfoListener.onInfo(mp, arg1, arg2);
-                    }
-                    switch (arg1) {
-                        case IMediaPlayer.MEDIA_INFO_VIDEO_TRACK_LAGGING:
-                            Log.d(TAG, "MEDIA_INFO_VIDEO_TRACK_LAGGING:");
-                            break;
-                        case IMediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START:
-                            Log.d(TAG, "MEDIA_INFO_VIDEO_RENDERING_START:");
-                            break;
-                        case IMediaPlayer.MEDIA_INFO_BUFFERING_START:
-                            Log.d(TAG, "MEDIA_INFO_BUFFERING_START:");
-                            sendCachingHintViewVisibilityMessage(true);
-                            break;
-                        case IMediaPlayer.MEDIA_INFO_BUFFERING_END:
-                            Log.d(TAG, "MEDIA_INFO_BUFFERING_END:");
-                            sendCachingHintViewVisibilityMessage(false);
-                            break;
-                        case IMediaPlayer.MEDIA_INFO_NETWORK_BANDWIDTH:
-                            Log.d(TAG, "MEDIA_INFO_NETWORK_BANDWIDTH: " + arg2);
-                            break;
-                        case IMediaPlayer.MEDIA_INFO_BAD_INTERLEAVING:
-                            Log.d(TAG, "MEDIA_INFO_BAD_INTERLEAVING:");
-                            break;
-                        case IMediaPlayer.MEDIA_INFO_NOT_SEEKABLE:
-                            Log.d(TAG, "MEDIA_INFO_NOT_SEEKABLE:");
-                            break;
-                        case IMediaPlayer.MEDIA_INFO_METADATA_UPDATE:
-                            Log.d(TAG, "MEDIA_INFO_METADATA_UPDATE:");
-                            break;
-                        case IMediaPlayer.MEDIA_INFO_UNSUPPORTED_SUBTITLE:
-                            Log.d(TAG, "MEDIA_INFO_UNSUPPORTED_SUBTITLE:");
-                            break;
-                        case IMediaPlayer.MEDIA_INFO_SUBTITLE_TIMED_OUT:
-                            Log.d(TAG, "MEDIA_INFO_SUBTITLE_TIMED_OUT:");
-                            break;
-                        case IMediaPlayer.MEDIA_INFO_VIDEO_ROTATION_CHANGED:
-                            mVideoRotationDegree = arg2;
-                            Log.d(TAG, "MEDIA_INFO_VIDEO_ROTATION_CHANGED: " + arg2);
-                            if (mRenderView != null)
-                                mRenderView.setVideoRotation(arg2);
-                            break;
-                        case IMediaPlayer.MEDIA_INFO_AUDIO_RENDERING_START:
-                            Log.d(TAG, "MEDIA_INFO_AUDIO_RENDERING_START:");
-                            break;
-                    }
-                    return true;
-                }
-            };
-
+    /**
+     * 播放器播放失败回调
+     */
     private IMediaPlayer.OnErrorListener mErrorListener =
             new IMediaPlayer.OnErrorListener() {
-                public boolean onError(IMediaPlayer mp, int framework_err, int impl_err) {
-                    Log.d(TAG, "onError: " + framework_err + "," + impl_err);
-                    setCurrentState(PlayerState.STATE_ERROR);
-                    isTryToPlaying = false;
+                public boolean onError(IMediaPlayer mp, int what, int extra) {
+                    Log.d(TAG, "onError: " + what + "," + extra);
+                    setCurrentState(STATE_ERROR);
+                    mReadyToPlay = false;
 
-                    sendCachingHintViewVisibilityMessage(false);
-                    
-                    /* If an error handler has been supplied, use it and finish. */
-                    if (mOnErrorListener != null) {
-                        if (mOnErrorListener.onError(mMediaPlayer, framework_err, impl_err)) {
-                            return true;
-                        }
-                    }
+                    setCacheViewVisibility(false);
 
-                    return true;
+                    return mVideoPlayerCallback == null
+                            || mVideoPlayerCallback.onError(mMediaPlayer, what, extra);
+
                 }
             };
 
+    /**
+     * 视频播放器缓存更新回调
+     */
     private IMediaPlayer.OnBufferingUpdateListener mBufferingUpdateListener =
             new IMediaPlayer.OnBufferingUpdateListener() {
                 public void onBufferingUpdate(IMediaPlayer mp, int percent) {
-//                    Log.d(TAG, "onBufferingUpdate: percent=" + percent);
+                    Log.d(TAG, "onBufferingUpdate: percent=" + percent);
                     mCurrentBufferPercentage = percent;
-                    if (mOnBufferingUpdateListener != null) {
-                        mOnBufferingUpdateListener.onBufferingUpdate(mp, percent);
+                    if (mVideoPlayerCallback != null) {
+                        mVideoPlayerCallback.onBufferingUpdate(mp, percent);
+                    }
+
+                    if (mController != null) {
+                        mController.onTotalCacheUpdate(percent * getDuration() / 100);
                     }
                 }
             };
 
-    private IMediaPlayer.OnSeekCompleteListener mSeekCompleteListener = new IMediaPlayer.OnSeekCompleteListener() {
+    /**
+     * 播放器seek结束回调
+     */
+    private IMediaPlayer.OnSeekCompleteListener mSeekCompleteListener = new IMediaPlayer
+            .OnSeekCompleteListener() {
 
         @Override
         public void onSeekComplete(IMediaPlayer mp) {
             Log.d(TAG, "onSeekComplete");
-            sendCachingHintViewVisibilityMessage(false);
-            if (mOnSeekCompleteListener != null) {
-                mOnSeekCompleteListener.onSeekComplete(mp);
-            }
-        }
-    };
-
-    private IMediaPlayer.OnTimedTextListener mOnTimedTextListener = new IMediaPlayer.OnTimedTextListener() {
-        @Override
-        public void onTimedText(IMediaPlayer mp, BDTimedText text) {
-            Log.d(TAG, "onTimedText text=" + text.getText());
-            if (text != null) {
-                subtitleDisplay.setText(text.getText());
-            }
-        }
-    };
-
-    private IMediaPlayer.OnMetadataListener mOnMetadataListener = new IMediaPlayer.OnMetadataListener() {
-        @Override
-        public void onMetadata(IMediaPlayer mp, Bundle meta) {
-            for (String key : meta.keySet()) {
-                Log.d(TAG, "onMetadata: key = " + key + ", value = " + meta.getString(key));
+            setCacheViewVisibility(false);
+            if (mVideoPlayerCallback != null) {
+                mVideoPlayerCallback.onSeekComplete(mp);
             }
         }
     };
 
     /**
-     * Register a callback to be invoked when the media file
-     * is loaded and ready to go.
-     *
-     * @param l The callback that will be run
-     */
-    public void setOnPreparedListener(IMediaPlayer.OnPreparedListener l) {
-        mOnPreparedListener = l;
-    }
-
-    /**
-     * Register a callback to be invoked when the end of a media file
-     * has been reached during playback.
-     *
-     * @param l The callback that will be run
-     */
-    public void setOnCompletionListener(IMediaPlayer.OnCompletionListener l) {
-        mOnCompletionListener = l;
-    }
-
-    /**
-     * Register a callback to be invoked when an error occurs
-     * during playback or setup.  If no listener is specified,
-     * or if the listener returned false, VideoView will inform
-     * the user of any errors.
-     *
-     * @param l The callback that will be run
-     */
-    public void setOnErrorListener(IMediaPlayer.OnErrorListener l) {
-        mOnErrorListener = l;
-    }
-
-    /**
-     * Register a callback to be invoked when an informational event
-     * occurs during playback or setup.
-     *
-     * @param l The callback that will be run
-     */
-    public void setOnInfoListener(IMediaPlayer.OnInfoListener l) {
-        mOnInfoListener = l;
-    }
-
-    public void setOnBufferingUpdateListener(IMediaPlayer.OnBufferingUpdateListener l) {
-        mOnBufferingUpdateListener = l;
-    }
-
-    public void setOnSeekCompleteListener(IMediaPlayer.OnSeekCompleteListener l) {
-        mOnSeekCompleteListener = l;
-    }
-
-    private void bindSurfaceHolder(IMediaPlayer mp, TextureRenderView.ISurfaceHolder holder) {
-        if (mp == null)
-            return;
-
-        if (holder == null) {
-            mp.setDisplay(null);
-            return;
-        }
-
-        holder.bindToMediaPlayer(mp);
-    }
-
-    TextureRenderView.IRenderCallback mSHCallback = new TextureRenderView.IRenderCallback() {
-        @Override
-        public void onSurfaceChanged(TextureRenderView.ISurfaceHolder holder, int format, int w, int h) {
-            Log.d(TAG, "mSHCallback onSurfaceChanged");
-            if (holder.getRenderView() != mRenderView) {
-                Log.e(TAG, "onSurfaceChanged: unmatched render callback\n");
-                return;
-            }
-
-            mSurfaceWidth = w;
-            mSurfaceHeight = h;
-            boolean isValidState = isTryToPlaying;
-            boolean hasValidSize = !mRenderView.shouldWaitForResize() || (mVideoWidth == w && mVideoHeight == h);
-            if (mMediaPlayer != null && isValidState && hasValidSize) {
-                start();
-            }
-        }
-
-        @Override
-        public void onSurfaceCreated(TextureRenderView.ISurfaceHolder holder, int width, int height) {
-            if (holder.getRenderView() != mRenderView) {
-                Log.e(TAG, "onSurfaceCreated: unmatched render callback\n");
-                return;
-            }
-
-            mSurfaceHolder = holder;
-            if (mMediaPlayer != null)
-                bindSurfaceHolder(mMediaPlayer, holder);
-            else
-                openVideo();
-        }
-
-        @Override
-        public void onSurfaceDestroyed(TextureRenderView.ISurfaceHolder holder) {
-            if (holder.getRenderView() != mRenderView) {
-                Log.e(TAG, "onSurfaceDestroyed: unmatched render callback\n");
-                return;
-            }
-
-            // after we return from this we can't use the surface any more
-            mSurfaceHolder = null;
-            releaseWithoutStop();
-        }
-    };
-
-    private void releaseWithoutStop() {
-
-    }
-
-    /**
-     * 释放后不能再使用该BDCloudVideoView对象
+     * 释放全部资源，释放之后不可再使用播放器
      */
     public void release() {
         // 释放播放器player
-        release(true);
-        // 释放显示资源
-        if (mRenderView != null) {
-            mRenderView.release();
+        releasePlayer();
+        mReadyToPlay = false;
+
+        // 释放textView相关资源
+        if (mTextureView != null) {
+            if (mTextureView.isAvailable()) {
+                mSurfaceCallback.setNeedReleaseSurface(true);
+            } else {
+                mTextureView.release();
+            }
+            mTextureView = null;
+        }
+        // 释放控件相关资源
+        if (mController != null) {
+            mController.setToggleScreenListener(null);
+            mController.bindMediaControl(null);
+            mController = null;
         }
     }
 
-    /*
-     * release the media player in any state
+    /**
+     * 重置播放器
      */
-    private void release(boolean cleartargetstate) {
+    private void releasePlayer() {
         if (mMediaPlayer != null) {
             mMediaPlayer.reset();
             mMediaPlayer.setDisplay(null);
-            synchronized (mMediaPlayer) {
-                mMediaPlayer.release();
-                mMediaPlayer = null;
-            }
-            setCurrentState(PlayerState.STATE_IDLE);
-            if (cleartargetstate) {
-                isTryToPlaying = false;
-            }
-            AudioManager am = (AudioManager) mAppContext.getSystemService(Context.AUDIO_SERVICE);
-            am.abandonAudioFocus(null);
+            mMediaPlayer.release();
+            mMediaPlayer = null;
+            setCurrentState(STATE_IDLE);
+        }
+
+        if (mVideoPlayerCallback != null) {
+            mVideoPlayerCallback = null;
         }
     }
 
 
     /**
-     * 开始或继续播放
-     * <p>
-     * complete状态时不支持拖动，因为该函数重新prepareAsync了。
-     * 为何complete需要重新prepare：有些情况下，直播中断会返回complete，此时需要重新prepareAsync.
+     * 开始播放/在暂停状态下继续播放
      */
-    @Override
     public void start() {
-        if (mMediaPlayer != null && (mCurrentState == PlayerState.STATE_ERROR)
-                || mCurrentState == PlayerState.STATE_PLAYBACK_COMPLETED) {
+        if (mMediaPlayer == null) {
+            return;
+        }
+        if (mCurrentState == STATE_ERROR || mCurrentState == STATE_PLAYBACK_COMPLETED) {
 
-            // if your link is not live link, you can comment the following if block
-            if (mCurrentState == PlayerState.STATE_PLAYBACK_COMPLETED) {
-                // complete --> stop --> prepareAsync
+            if (mCurrentState == STATE_PLAYBACK_COMPLETED) {
                 mMediaPlayer.stop();
             }
 
-            mMediaPlayer.prepareAsync(); // will start() in onPrepared, because isTryToPlaying = true
-            sendCachingHintViewVisibilityMessage(true);
-            setCurrentState(PlayerState.STATE_PREPARING);
+            mMediaPlayer.prepareAsync();
+            setCacheViewVisibility(true);
+            setCurrentState(STATE_PREPARING);
         } else if (isInPlaybackState()) {
             mMediaPlayer.start();
-            setCurrentState(PlayerState.STATE_PLAYING);
+            if (DEBUG) {
+                Log.d(TAG, "start video : " + mUri);
+            }
+            setCurrentState(STATE_PLAYING);
         }
-        isTryToPlaying = true;
+        mReadyToPlay = true;
     }
 
     /**
      * 暂停播放
      */
-    @Override
     public void pause() {
         if (isInPlaybackState()) {
             if (mMediaPlayer.isPlaying()) {
                 mMediaPlayer.pause();
-                setCurrentState(PlayerState.STATE_PAUSED);
+                setCurrentState(STATE_PAUSED);
             }
         }
-        isTryToPlaying = false;
+        mReadyToPlay = false;
     }
 
+    /**
+     * 获取缓冲进度百分比
+     *
+     * @return 当前播放进度百分比
+     */
+    public int getBufferPercentage() {
+        if (mMediaPlayer != null) {
+            return mCurrentBufferPercentage;
+        }
+        return 0;
+    }
+
+    /**
+     * 获取当前视频源url
+     *
+     * @return 视频源url
+     */
     public String getCurrentPlayingUrl() {
         if (this.mUri != null) {
             return this.mUri.toString();
@@ -1161,11 +631,10 @@ public class BDCloudVideoView extends FrameLayout implements MediaController.Med
     }
 
     /**
-     * 获得视频时长，单位为毫秒！
+     * 获得视频时长。单位：ms
      *
-     * @return
+     * @return 视频总时长
      */
-    @Override
     public int getDuration() {
         if (isInPlaybackState()) {
             return (int) mMediaPlayer.getDuration();
@@ -1175,11 +644,10 @@ public class BDCloudVideoView extends FrameLayout implements MediaController.Med
     }
 
     /**
-     * 获取当前播放进度，单位为毫秒！
+     * 获取当前播放进度。单位：ms
      *
-     * @return
+     * @return 视频播放进度
      */
-    @Override
     public int getCurrentPosition() {
         if (isInPlaybackState()) {
             return (int) mMediaPlayer.getCurrentPosition();
@@ -1188,122 +656,55 @@ public class BDCloudVideoView extends FrameLayout implements MediaController.Med
     }
 
     /**
-     * 将播放器指定到某个播放位置
+     * 将播放器定位到到某个播放位置。单位：ms
      *
-     * @param msec
+     * @param mSec 待定位的位置
      */
-    @Override
-    public void seekTo(int msec) {
+    public void seekTo(int mSec) {
         if (isInPlaybackState()) {
-            mMediaPlayer.seekTo(msec);
-            this.sendCachingHintViewVisibilityMessage(true);
+            mMediaPlayer.seekTo(mSec);
+            setCacheViewVisibility(true);
         }
     }
 
     /**
-     * 是否正在播放
+     * 判断是否正在播放
      *
-     * @return
+     * @return true：处于播放状态；false：非播放状态
      */
-    @Override
     public boolean isPlaying() {
         return isInPlaybackState() && mMediaPlayer.isPlaying();
     }
 
-    @Override
-    public int getBufferPercentage() {
-        if (mMediaPlayer != null) {
-            return mCurrentBufferPercentage;
-        }
-        return 0;
-    }
 
+    /**
+     * 是否处于播放状态。与isPlaying不同之处在于，pause和completion也属于播放状态，但是isPlaying会返回true
+     *
+     * @return 是否处于播放状态
+     */
     private boolean isInPlaybackState() {
-        return (mMediaPlayer != null &&
-                mCurrentState != PlayerState.STATE_ERROR &&
-                mCurrentState != PlayerState.STATE_IDLE &&
-                mCurrentState != PlayerState.STATE_PREPARING);
-    }
-
-    @Override
-    public boolean canPause() {
-        return mCanPause;
-    }
-
-    @Override
-    public boolean canSeekBackward() {
-        return mCanSeekBack;
-    }
-
-    @Override
-    public boolean canSeekForward() {
-        return mCanSeekForward;
-    }
-
-    @Override
-    public int getAudioSessionId() {
-        return 0;
+        return (mMediaPlayer != null
+                && mCurrentState != STATE_ERROR
+                && mCurrentState != STATE_IDLE
+                && mCurrentState != STATE_PREPARING);
     }
 
     /**
      * 获取视频宽度
      *
-     * @return
+     * @return 视频宽度
      */
     public int getVideoWidth() {
-        return mVideoWidth;
+        return mMediaPlayer.getVideoWidth();
     }
 
     /**
      * 获取视频高度
      *
-     * @return
+     * @return 视频高度
      */
     public int getVideoHeight() {
-        return mVideoHeight;
-    }
-
-    /**
-     * 设置视频拉伸模式
-     * 可设置以下三种：
-     * 填充模式 VIDEO_SCALING_MODE_SCALE_TO_FIT
-     * 裁剪模式 VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
-     * 铺满模式 VIDEO_SCALING_MODE_SCALE_TO_MATCH_PARENT
-     *
-     * @param mode
-     */
-    public void setVideoScalingMode(int mode) {
-        if (mode == VIDEO_SCALING_MODE_SCALE_TO_FIT || mode == VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
-                || mode == VIDEO_SCALING_MODE_SCALE_TO_MATCH_PARENT) {
-            if (mode == VIDEO_SCALING_MODE_SCALE_TO_FIT) {
-                // 填充
-                mCurrentAspectRatio = TextureRenderView.AR_ASPECT_FIT_PARENT;
-            } else if (mode == VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING) {
-                // 裁剪
-                mCurrentAspectRatio = TextureRenderView.AR_ASPECT_FILL_PARENT;
-            } else {
-                // 铺满
-                mCurrentAspectRatio = TextureRenderView.AR_MATCH_PARENT;
-            }
-            if (mRenderView != null) {
-                mRenderView.setAspectRatio(mCurrentAspectRatio);
-            }
-        } else {
-            Log.e(TAG, "setVideoScalingMode: param should be VID");
-        }
-    }
-
-    /**
-     * 获取多码率的字串数组
-     * 每个String的格式为
-     *
-     * @return
-     */
-    public String[] getVariantInfo() {
-        if (mMediaPlayer != null) {
-            return mMediaPlayer.getVariantInfo();
-        }
-        return null;
+        return mMediaPlayer.getVideoHeight();
     }
 
     /**
@@ -1320,72 +721,14 @@ public class BDCloudVideoView extends FrameLayout implements MediaController.Med
     }
 
     /**
-     * 多分辨率切换（仅适用于Master m3u8文件）
-     * mMediaPlayer.selectResolutionByIndex函数处理过程中，mediaplayer的内部逻辑会stop-->选择码率-->prepareAsync
-     * 当处理完成后，您会收到一个onPrepared事件
-     *
-     * @param index 该index为getVariantInfo()数组的合法下标
-     */
-    public boolean selectResolutionByIndex(int index) {
-        boolean selectRight = false;
-        if (mMediaPlayer != null) {
-            this.sendCachingHintViewVisibilityMessage(true);
-            selectRight = mMediaPlayer.selectResolutionByIndex(index);
-            if (!selectRight) {
-                this.sendCachingHintViewVisibilityMessage(false);
-            }
-        }
-        return selectRight;
-    }
-
-    /**
-     * 获取截图接口
-     * <p>
-     * 截图原理：
-     * TextureView系统接口支持getBitmap截图
-     * SurfaceView暂不支持截图(影响4.0及以下系统的用户)
+     * 获取视频截图
      */
     public Bitmap getBitmap() {
-        if (mRenderView != null) {
-            return mRenderView.getBitmap();
+        if (mTextureView != null) {
+            return mTextureView.getBitmap();
         }
         return null;
     }
 
-    public static void setAK(String ak) {
-        BDCloudMediaPlayer.setAK(ak);
-    }
 
-    /**
-     * tell BDCloudVideoView that activity will be put into background
-     * should invoke before super.onStop() in an activity
-     * avoid video frame blocked in small probability on some device when using TextureRenderView
-     */
-    public void enterBackground() {
-        if (mRenderView != null) {
-            renderRootView.removeView(mRenderView.getView());
-        }
-    }
-
-    /**
-     * tell BDCloudVideoView that activity will come back to foreground
-     * avoid video frame blocked in small probability on flyme device when using TextureRenderView
-     */
-    public void enterForeground() {
-        if (mRenderView != null) {
-            View renderUIView = mRenderView.getView();
-            // getParent() == null : is removed in enterBackground()
-            if (renderUIView.getParent() == null) {
-                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-                        FrameLayout.LayoutParams.WRAP_CONTENT,
-                        FrameLayout.LayoutParams.WRAP_CONTENT,
-                        Gravity.CENTER);
-                renderUIView.setLayoutParams(lp);
-                renderRootView.addView(renderUIView);
-            } else {
-                Log.d(TAG, "enterForeground; but getParent() is not null");
-            }
-
-        }
-    }
 }
