@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="#5a606060">
+
+    <ImageButton
+        android:id="@+id/btn_play"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerInParent="true"
+        android:layout_centerVertical="true"
+        android:layout_marginLeft="10dp"
+        android:background="@drawable/btn_play"/>
+
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="46dp"
+        android:layout_alignParentBottom="true">
+        <TextView
+            android:id="@+id/tv_position"
+            android:layout_width="45dp"
+            android:layout_height="40dp"
+            android:layout_alignParentLeft="true"
+            android:layout_centerVertical="true"
+            android:layout_marginLeft="8dp"
+            android:gravity="center"
+            android:singleLine="true"
+            android:text="00:00:00"
+            android:textColor="#ffffffff"
+            android:textSize="10dp"/>
+
+        <ImageButton
+            android:id="@+id/btn_toggle_screen"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentRight="true"
+            android:layout_centerVertical="true"
+            android:layout_marginRight="8dp"
+            android:background="@drawable/btn_fullscreen"
+            android:gravity="center"/>
+
+        <TextView
+            android:id="@+id/tv_duration"
+            android:layout_width="45dp"
+            android:layout_height="40dp"
+            android:layout_toLeftOf="@id/btn_toggle_screen"
+            android:layout_centerVertical="true"
+            android:gravity="center"
+            android:singleLine="true"
+            android:text="00:00:00"
+            android:textColor="#ffffffff"
+            android:textSize="10dp"/>
+
+        <SeekBar
+            android:id="@+id/seekbar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_centerVertical="true"
+            android:layout_toLeftOf="@id/tv_duration"
+            android:layout_toRightOf="@id/tv_position"
+            android:maxHeight="2dp"
+            android:minHeight="2dp"
+            android:paddingLeft="8dp"
+            android:paddingRight="8dp"
+            android:progressDrawable="@drawable/seekbar_holo_light"
+            android:thumb="@drawable/seekbar_ratio"
+        />
+
+    </RelativeLayout>
+
+</RelativeLayout>

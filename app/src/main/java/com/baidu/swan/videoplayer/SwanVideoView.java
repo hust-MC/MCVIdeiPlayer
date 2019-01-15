@@ -1,4 +1,4 @@
-package com.baidu.cloud.videoplayer.widget;
+package com.baidu.swan.videoplayer;
 
 import android.content.Context;
 import android.graphics.Bitmap;
@@ -18,6 +18,11 @@ import android.widget.TextView;
 import com.baidu.cloud.media.player.BDCloudMediaPlayer;
 import com.baidu.cloud.media.player.IMediaPlayer;
 import com.baidu.cloud.videoplayer.demo.BuildConfig;
+import com.baidu.cloud.videoplayer.demo.R;
+import com.baidu.swan.videoplayer.callback.IVideoPlayerCallback;
+import com.baidu.swan.videoplayer.callback.SurfaceTextureCallback;
+import com.baidu.swan.videoplayer.widget.MediaController;
+import com.baidu.swan.videoplayer.widget.VideoTextureView;
 
 import java.io.IOException;
 import java.util.Map;
@@ -29,7 +34,7 @@ import java.util.Map;
  * @author machao10
  * @since 2019-01-09
  */
-public class BDCloudVideoView extends FrameLayout {
+public class SwanVideoView extends FrameLayout {
 
     /** 调试开关 */
     private static final boolean DEBUG = BuildConfig.DEBUG;
@@ -69,7 +74,7 @@ public class BDCloudVideoView extends FrameLayout {
     /** 指定headers，默认不指定 */
     private Map<String, String> mHeaders;
     /** 播放控件 */
-    private SimpleMediaController mController;
+    private MediaController mController;
     /** 百度云播放器实例 */
     private BDCloudMediaPlayer mMediaPlayer;
     /** 当前播放进度百分比 */
@@ -77,7 +82,7 @@ public class BDCloudVideoView extends FrameLayout {
     /** app context */
     private Context mAppContext;
     /** 用于绘制视频的TextureView对象 */
-    private TextureRenderView mTextureView;
+    private VideoTextureView mTextureView;
     /** 视频播放初始位置 */
     private long mInitPlayPositionInMSec = -1;
     /** 标记是否自动循环播放 */
@@ -97,6 +102,8 @@ public class BDCloudVideoView extends FrameLayout {
 
     /** 视频view根布局 */
     private FrameLayout mVideoRootView;
+    private SurfaceTextureCallback mSurfaceCallback;
+    private IVideoPlayerCallback mVideoPlayerCallback;
 
     static {
         BDCloudMediaPlayer.setAK("5989e435183e42c5a3f7da72dbac006c");
@@ -108,7 +115,7 @@ public class BDCloudVideoView extends FrameLayout {
      *
      * @param context 上下文
      */
-    public BDCloudVideoView(Context context) {
+    public SwanVideoView(Context context) {
         super(context);
         initVideoView(context);
     }
@@ -119,7 +126,7 @@ public class BDCloudVideoView extends FrameLayout {
      * @param context 上下文
      * @param attrs   布局参数
      */
-    public BDCloudVideoView(Context context, AttributeSet attrs) {
+    public SwanVideoView(Context context, AttributeSet attrs) {
         super(context, attrs);
         initVideoView(context);
     }
@@ -131,7 +138,7 @@ public class BDCloudVideoView extends FrameLayout {
      * @param attrs        布局参数
      * @param defStyleAttr 布局风格参数
      */
-    public BDCloudVideoView(Context context, AttributeSet attrs, int defStyleAttr) {
+    public SwanVideoView(Context context, AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
         initVideoView(context);
     }
@@ -146,7 +153,7 @@ public class BDCloudVideoView extends FrameLayout {
         mAppContext = context.getApplicationContext();
 
         mVideoRootView = new FrameLayout(context);
-        FrameLayout.LayoutParams rootViewParams = new FrameLayout.LayoutParams(-1, -1);
+        LayoutParams rootViewParams = new LayoutParams(-1, -1);
         addView(mVideoRootView, rootViewParams);
 
         mController = new MediaController(context);
@@ -195,9 +202,9 @@ public class BDCloudVideoView extends FrameLayout {
      */
     private void addCachingHintView() {
         mLoadingLayout = new RelativeLayout(this.getContext());
-        FrameLayout.LayoutParams loadingParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams
+        LayoutParams loadingParams = new LayoutParams(LayoutParams
                 .MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT);
+                LayoutParams.MATCH_PARENT);
         mLoadingLayout.setVisibility(View.GONE);
         addView(mLoadingLayout, loadingParams);
 
@@ -286,9 +293,9 @@ public class BDCloudVideoView extends FrameLayout {
 
         mTextureView = new VideoTextureView(getContext());
 
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
+        LayoutParams params = new LayoutParams(
+                LayoutParams.WRAP_CONTENT,
+                LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER);
         mTextureView.setLayoutParams(params);
         mVideoRootView.addView(mTextureView);
